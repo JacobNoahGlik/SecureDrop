@@ -6,6 +6,7 @@ import FileCredibility
 import HashPasswords
 import certificate_authority
 import cryptography
+import os
 # from shutil import copyfile
 
 
@@ -121,3 +122,29 @@ def removeEncoding(file_name):
   file_name = file_name.replace('.zok', '').replace('_', ".").replace(".", "_", num_underscores - 1)
   return file_name
 """
+
+
+
+def gen_multiple_send_files(sym_key, file, numChuncks, sal = b'\xdd:\x12\xb3b\xab&\xa6\xaat\xbfM\xc2G\xc7@P\xd3\xba,>\xd5\x91\x06N\xf4\xfe\x0c\xccf\\\xbb'):
+  filename, filetype = file.split('.')
+  list_of_zuk_files = [(filename + '0.zok')]
+  url_safe_sym_key = HashPasswords.calcMaster(sym_key, sal, b'', 'sym')
+
+  filetype = '.' + filetype
+
+  numBytes = int(os.path.getsize(filename + filetype)) // numChuncks
+  with open(filename + filetype, 'rb') as infile:
+    for i in range(numChuncks - 1):
+      content = infile.read(numBytes)
+
+      with open(list_of_zuk_files[i], 'wb') as outfile:
+        outfile.write(encryption.encrypt_bytes(content, url_safe_sym_key))
+
+      list_of_zuk_files.append(filename + str(i + 1) + '.zok')
+
+    content = infile.read()
+    with open(list_of_zuk_files[numChuncks - 1], 'wb') as outfile:
+      outfile.write(encryption.encrypt_bytes(content, url_safe_sym_key))
+
+  FileCredibility.updateFiles(list_of_zuk_files)
+  return list_of_zuk_files

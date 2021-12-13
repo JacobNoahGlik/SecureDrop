@@ -91,3 +91,4 @@ def test_scrypt():
   print("Are eq:", A_sym == B_sym)
 
   print(f'p1 is a sutable replacement:{A_sym == P_sym}')
+

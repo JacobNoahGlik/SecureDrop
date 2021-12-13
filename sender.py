@@ -13,6 +13,12 @@ EXIT_ARR = ['q','quit','exit','leave','dissconect', 'returntomenu', 'returntosec
 
 MAX_RECEIVE_SIZE = 1048575 # 1,048,575
 
+def massiveFile(filename):
+  isMassive = (int(os.path.getsize(filename)) + 1) > 1650000000
+  iterations = int(os.path.getsize(filename)) // 1650000000 + 1
+  return isMassive, iterations
+
+
 def wishToLeave(filename):
   if filename.lower().replace(' ', '') in EXIT_ARR:
     ch = input(f'You entered {filename}, do you want to leave \'send\' and return to main menu in Secure Drop?(y/n)').lower()
@@ -191,6 +197,13 @@ def sendFile(hash, usr_email):
   # let client know that the authentication was successful
   client.send("Receiver signature file has been transferred and authenticated.".encode(FORMAT))
 
+  # predict number of times file will be split into parts
+  isMassiveFile, iterations = massiveFile(filename)
+  if isMassiveFile:
+    client.send(f'{iterations}'.encode(FORMAT))
+  else:
+    client.send(f'1'.encode(FORMAT))
+
   # predict file size:
   predicted_size = predictFileSize(filename)
   client.send(f'size={predicted_size}'.encode(FORMAT))
@@ -215,11 +228,15 @@ def sendFile(hash, usr_email):
     print("Returning to SecureDrop menu.\n")
     client.close()
     return
-  if EncMsg.gen_send_file(sym_key, fn, extension):
-    if large_file:
-      print("The file you are encrypting is large. This may take a moment... Success!")
+  if not isMassiveFile:
+    if EncMsg.gen_send_file(sym_key, fn, extension):
+      if large_file:
+        print("The file you are encrypting is large. This may take a moment... Success!")
+    else:
+      print("Failed to encrypt the file. ERROR_26: file too large")
   else:
-    print("Failed to encrypt the file. ERROR_26: file too large")
+    list_of_files = EncMsg.gen_multiple_send_files(sym_key, filename, iterations)
+    FileCredibility.updateFiles(list_of_files)
 
   # send the sender public key filename
   client.send("s.pub".encode(FORMAT))
@@ -235,7 +252,7 @@ def sendFile(hash, usr_email):
   try:
     # receive message about successfull public key file transfer
     msg = client.recv(SIZE).decode(FORMAT)
-    # print(msg)
+    #print(msg)
   except:
     print("\n" + contact + " has closed the connection. Returning to SecureDrop menu.\n")
     client.close()
@@ -265,15 +282,19 @@ def sendFile(hash, usr_email):
   client.send(filename.encode(FORMAT))
 
   # send enc-message file size to server
-  filesize = getFileSize(filename.split('.')[0] + '.zok')
+  if isMassiveFile:
+    filesize = getFileSize(filename.split('.')[0] + '0.zok') * iterations
+  else:
+    filesize = getFileSize(filename.split('.')[0] + '.zok')
   client.send(f'size={filesize}'.encode(FORMAT))
 
-  # get encrypted message data
-  fenc = filename.split(".")[0] + ".zok"
-  FileCredibility.fullStop(fenc)
-  file = open(fenc, "rb")
-  data = file.read()
-  file.close()
+  if not isMassiveFile: # read all at once if file not massive
+    # get encrypted message data
+    fenc = filename.split(".")[0] + ".zok"
+    FileCredibility.fullStop(fenc)
+    file = open(fenc, "rb")
+    data = file.read()
+    file.close()
   
   try:
     decision = client.recv(SIZE).decode(FORMAT)
@@ -285,11 +306,35 @@ def sendFile(hash, usr_email):
     print("\n" + contact + " has declined the large file. Returning to SecureDrop menu.\n")
     client.close()
     return
-  
-  print(f'\n{filename} sending...',end='\r')
-  # send encrypted message data 
-  client.sendall(data)
+    
+  if isMassiveFile:
+    print("The file you are encrypting is large. This may take a moment... Success!")
+    client.send(str(list_of_files).encode(FORMAT))
+    responce = client.recv(SIZE).decode(FORMAT)
+    if responce == 'got_list':
 
+      for numFile, file in enumerate(list_of_files):
+        FileCredibility.fullStop(file)
+        client.send(str(getFileSize(file)).encode(FORMAT))
+        with open(file, 'rb') as outfile:
+          client.send(outfile.read())
+        status = client.recv(SIZE).decode(FORMAT)
+        if status != 'got file':
+          print('transfer failed')
+          print("\nClosing the connection. Returning to SecureDrop menu.\n")
+          client.close()
+          return
+        print(f'Sent {numFile + 1} of {len(list_of_files)} successfully!',end='\r')
+      print('')
+    else:
+      print("\nConnection may have currupted or " + contact + " has closed the connection. Returning to SecureDrop menu.\n")
+      client.close()
+      return
+  else:
+    print(f'\n{filename} sending...',end='\r')
+    # send encrypted message data 
+    client.sendall(data)
+    
   # receive message from server about successful file transfer
   try:
     msg = client.recv(SIZE).decode(FORMAT)
