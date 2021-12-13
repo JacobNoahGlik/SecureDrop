@@ -1,1 +1,0 @@
-SecureDrop is a Secure File Transfer System. Letting two instances communicate and send encrypted files to one another through python sockets. (file limit 2 gig)
