@@ -11,18 +11,31 @@ import cryptography.exceptions
 import pathlib
 MAX_RECEIVE_SIZE = 1048575
 import time
+import certificate_authority
+import HashPasswords
 
 transfer_time = 10
 
-def bigfile_andusercontinue(filesize) -> bool:
+def makeList(str_listoffiles):
+  str_listoffiles = str_listoffiles.replace('[','').replace(']','').replace('\'','')
+  return str_listoffiles.split(', ')
+
+def bigfile_andusercontinue(filesize, numChuncks) -> bool:
   dif = 0.9425
   transfer_time = (filesize * dif / 10000000)
-  print(f'\nWARNING:\n\tThe sender is trying to send a file larger then one megabyte.\n (encrypted_size = {(filesize * dif / 1000000):.2f} mb) This file transfer may take up to {transfer_time:.2f} seconds to complete!')
-  ch = input('\tDo you have the space / would you like to receive this file(y/n) ').lower().replace(' ', '')
-  while ch != 'n' and ch != 'y':
+  if numChuncks == 1:
     print(f'\nWARNING:\n\tThe sender is trying to send a file larger then one megabyte.\n (encrypted_size = {(filesize * dif / 1000000):.2f} mb) This file transfer may take up to {transfer_time:.2f} seconds to complete!')
     ch = input('\tDo you have the space / would you like to receive this file(y/n) ').lower().replace(' ', '')
-  
+    while ch != 'n' and ch != 'y':
+      print(f'\nWARNING:\n\tThe sender is trying to send a file larger then one megabyte.\n (encrypted_size = {(filesize * dif / 1000000):.2f} mb) This file transfer may take up to {transfer_time:.2f} seconds to complete!')
+      ch = input('\tDo you have the space / would you like to receive this file(y/n) ').lower().replace(' ', '')
+  else:
+    print(f'\nWARNING:\n\tThe sender is trying to send a file larger then two gigabytes!\n (encrypted_size = {(filesize * dif / 1000000000 ):.2f} gb) This file will be sent in parts, and may take up to {(transfer_time / 1.2):.2f} seconds to complete!')
+    ch = input('\tDo you have the space / would you like to receive this file(y/n) ').lower().replace(' ', '')
+    while ch != 'n' and ch != 'y':
+      print(f'\nWARNING:\n\tThe sender is trying to send a file larger then two gigabytes!\n (encrypted_size = {(filesize * dif / 1000000000 ):.2f} gb) This file will be sent in parts, and may take up to {(transfer_time / 1.2):.2f} seconds to complete!')
+      ch = input('\tDo you have the space / would you like to receive this file(y/n) ').lower().replace(' ', '')
+
   return (ch == 'y')
 
 
@@ -199,6 +212,19 @@ def receiveFile(hash, usr_email, TimeOut=30):
     conn.close()
     return
 
+  # get number of chuncks
+  try:
+    numChuncks = int(conn.recv(SIZE).decode(FORMAT))
+    if type(numChuncks) != int:
+      print("\n" + contact + " has closed the connection. Returning to SecureDrop menu.\n")
+      conn.close()
+      return
+  except:
+    print("\n" + contact + " has closed the connection. Returning to SecureDrop menu.\n")
+    conn.close()
+    return
+
+  # get predicted size
   try:
     predicted_size = extrapolateFileSize(conn.recv(SIZE).decode(FORMAT))
     if(predicted_size >= MAX_RECEIVE_SIZE):
@@ -217,16 +243,21 @@ def receiveFile(hash, usr_email, TimeOut=30):
     conn.close()
     return
 
-  # save sender public key data
-  FileCredibility.fullStop(sender_public_key_filename)
-  with open(sender_public_key_filename, "w") as sender_public_key_file:
-    sender_public_key_file.write(sender_public_key_data)
-  FileCredibility.updateFiles([sender_public_key_filename])
+  try:
+    # save sender public key data
+    FileCredibility.fullStop(sender_public_key_filename)
+    with open(sender_public_key_filename, "w") as sender_public_key_file:
+      sender_public_key_file.write(sender_public_key_data)
+    FileCredibility.updateFiles([sender_public_key_filename])
 
-  # print("Sender public key file has been received.")
+    # print("Sender public key file has been received.")
 
-  # let sender know we have received the senders public key file
-  conn.send("Sender public key file has been successfully transferred.".encode(FORMAT))
+    # let sender know we have received the senders public key file
+    conn.send("Sender public key file has been successfully transferred.".encode(FORMAT))
+  except:
+    print("\n" + contact + " has closed the connection. Returning to SecureDrop menu.\n")
+    conn.close()
+    return
 
   try:
     # receive sig filename and data
@@ -276,35 +307,71 @@ def receiveFile(hash, usr_email, TimeOut=30):
 
   # if bigger then max receive size
   big_file = False
+  massive_file = False
   if filesize > MAX_RECEIVE_SIZE:
-    if bigfile_andusercontinue(filesize):
+    if bigfile_andusercontinue(filesize, numChuncks):
       conn.send("y".encode(FORMAT))
-      print('\nReceiving very large file...',end='\r')
-      time.sleep(0.1)
-      big_file = True
-      # custom situation
-      max_iterations = filesize // MAX_RECEIVE_SIZE
-      with open(filename, "wb") as file:
-        for iteration in range(max_iterations):
+      if numChuncks > 1:
+        massive_file = True
+        list_of_files = makeList(conn.recv(SIZE).decode(FORMAT))
+        conn.send('got_list'.encode(FORMAT))
+
+        #
+        for numberFile, file in enumerate(list_of_files): 
+          responce = conn.recv(SIZE).decode(FORMAT)
+          size = int(responce)
+          iterate = size // MAX_RECEIVE_SIZE
+          with open(file, 'wb') as infile:
+            for i in range(iterate + 1):
+              curBytes = conn.recv(MAX_RECEIVE_SIZE)
+              infile.write(curBytes)
+              print(f'Part {numberFile + 1} of {len(list_of_files)} - package {i+1} of {iterate+1}', end='\r')
+          conn.send('got file'.encode(FORMAT))
+        
+        print('\nDecrypting and assembling file...',end='\r')
+
+        if not certificate_authority.Authenticate('s.pub'):
+          print('S.pub is a forgery! The sender is not who they say they are. closing connection...')
+          conn.close()
+          return
+
+        sym_key = EncMsg.getSymKey('s.pub', one_time_receiver_private_key)
+
+        with open(filename, 'wb') as file:
+          for numberFile, encfile in enumerate(list_of_files):
+            with open(encfile, 'rb') as encBytes:
+              currBytes = encryption.decrypt_bytes(encBytes.read(), HashPasswords.calcMasterAssist(sym_key))
+            file.write(currBytes)
+            print(f'Decrypting + assembling file: part {numberFile + 1} of {len(list_of_files)}',end='\r')
+
+        
+      else:
+        print('\nReceiving very large file...',end='\r')
+        time.sleep(0.1)
+        big_file = True
+        # custom situation
+        max_iterations = filesize // MAX_RECEIVE_SIZE
+        with open(filename, "wb") as file:
+          for iteration in range(max_iterations):
+            try:
+              filedata = conn.recv(MAX_RECEIVE_SIZE)
+            except:
+              print("\n" + contact + " has closed the connection. Returning to SecureDrop menu.\n")
+              conn.close()
+              return
+            file.write(filedata)
+            try:
+              print(f'Receiving very large file: package {iteration} of {max_iterations + 1}',end='\r')
+            except:
+              print(f'print_failed',end='\r')
           try:
-            filedata = conn.recv(MAX_RECEIVE_SIZE)
+            filedata = conn.recv(filesize % MAX_RECEIVE_SIZE + 10)
           except:
             print("\n" + contact + " has closed the connection. Returning to SecureDrop menu.\n")
             conn.close()
             return
           file.write(filedata)
-          try:
-            print(f'Receiving very large file: package {iteration} of {max_iterations + 1}',end='\r')
-          except:
-            print(f'print_failed',end='\r')
-        try:
-          filedata = conn.recv(filesize % MAX_RECEIVE_SIZE + 10)
-        except:
-          print("\n" + contact + " has closed the connection. Returning to SecureDrop menu.\n")
-          conn.close()
-          return
-        file.write(filedata)
-        print(f'Receiving very large file: package {max_iterations + 1} of {max_iterations + 1}.')
+          print(f'Receiving very large file: package {max_iterations + 1} of {max_iterations + 1}.')
     else:
       conn.send("n".encode(FORMAT))
       print(f'\nDeclining {contact}\'s file.')
@@ -337,17 +404,18 @@ def receiveFile(hash, usr_email, TimeOut=30):
     size = int(os.path.getsize(filename)) + 1
     calc_mb = (size * 0.0009765625 / 1000)
     print(f'Beginning to decrypt {fnout} ({calc_mb:.2f} mb), aprox: {(calc_mb * 0.0936037441 / 10):.1f} seconds')
-
-  try:
-    if(EncMsg.decrypt_incoming_file(fn, extension, one_time_receiver_private_key)):
-      print(fnout + " has been decrypted.\n")
-    else:
-      print(fnout + " failed the decryption process.\n")
-  except cryptography.exceptions.InvalidSignature:
-    print('s.pub is a forgery!')
-    print("Returning to SecureDrop menu.\n")
-    conn.close()
-    return
+  
+  if not massive_file:
+    try:
+      if(EncMsg.decrypt_incoming_file(fn, extension, one_time_receiver_private_key)):
+        print(fnout + " has been decrypted.\n")
+      else:
+        print(fnout + " failed the decryption process.\n")
+    except cryptography.exceptions.InvalidSignature:
+      print('s.pub is a forgery!')
+      print("Returning to SecureDrop menu.\n")
+      conn.close()
+      return
   
   # let contact know that file has been received
   conn.send((fnout + " has been successfully transferred.").encode(FORMAT))

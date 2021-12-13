@@ -141,6 +141,10 @@ def calcMaster(ipas, isal, ipep, ipic):
   return out
 
 
+def calcMasterAssist(ipas):
+  sal = b'\xdd:\x12\xb3b\xab&\xa6\xaat\xbfM\xc2G\xc7@P\xd3\xba,>\xd5\x91\x06N\xf4\xfe\x0c\xccf\\\xbb'
+  return calcMaster(ipas, sal, b'', 'sym')
+
 
 def calcPeperHash(password, s, p):
   return password + p
