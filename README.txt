@@ -13,6 +13,7 @@ cffi ('python3 -m pip install cffi')
 
 Note:
 Secure Drop will work best on Windows. The functionality may be limited when running on other operating systems.
+The size of files is increased to 0.5tb when transfering between instances of SecureDrop.
 
 
 Intructions for using Secure Drop:
