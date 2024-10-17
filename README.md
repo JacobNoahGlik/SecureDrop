@@ -2,6 +2,8 @@
 ##### A secure version of airdrop
 ###### By: Jacob Glik, and Peyton Somerville
 
+<br>
+
 ## Prerequisites
 
 ### Python Packages
@@ -19,10 +21,18 @@
   * `python3 -m pip install cffi`
 
 
+<br>
+
+<br>
+
 ## Instructions
 ### Type `python3 secureDrop.py` to run Secure Drop.
 ### Type `python3 reset.py` to reset Secure Drop and erase all data.
 
+
+<br>
+
+<br>
 
 
 ## Usage Note:
