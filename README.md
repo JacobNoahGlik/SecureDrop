@@ -1,9 +1,6 @@
 # Secure Drop 
-###### A secure version of airdrop
-
-##### Team members:
-###### Jacob Glik
-###### Peyton Somerville
+##### A secure version of airdrop
+###### By: Jacob Glik, and Peyton Somerville
 
 ## Prerequisites
 
