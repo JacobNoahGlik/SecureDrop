@@ -47,7 +47,7 @@
 ###### Complete "end-to-end encryption" 
 
 1. `Credit Authority` validates clients and their asymmetric encryption keys
-2. An `ECDH Key Handshake` is performed between the two parties before every message to ensure perfect forward secrecy
+2. An `ECDH Key Handshake` is performed between the two parties before every message to ensure `Perfect Forward Secrecy`
 3. All communication is symmetrically encrypted using the symmetric key generated from the `ECDH Key Handshake` step above
 4. The file system is tamper-proof due to the `FileCredibility` system
 
